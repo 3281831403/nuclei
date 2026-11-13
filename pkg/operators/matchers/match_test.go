@@ -442,3 +442,57 @@ func TestMatcher_MatchDSL_ErrorHandling(t *testing.T) {
 	ok := m.MatchDSL(map[string]interface{}{})
 	require.True(t, ok)
 }
+
+func TestMatcher_MatchDSL_AND_NonBooleanFailsGroup(t *testing.T) {
+	// A DSL item that does not evaluate to a boolean (e.g. len(body) instead
+	// of len(body) > 0) must fail the whole AND group instead of being
+	// silently skipped.
+	m := &Matcher{Type: MatcherTypeHolder{MatcherType: DSLMatcher}, Condition: "and", DSL: []string{"contains(body, 'x')", "len(body)"}}
+	require.NoError(t, m.CompileMatchers())
+	require.False(t, m.MatchDSL(map[string]interface{}{"body": "x"}))
+
+	// Same for an expression that fails to evaluate.
+	mErr := &Matcher{Type: MatcherTypeHolder{MatcherType: DSLMatcher}, Condition: "and", DSL: []string{"contains(body, 'x')", "1 / 0"}}
+	require.NoError(t, mErr.CompileMatchers())
+	require.False(t, mErr.MatchDSL(map[string]interface{}{"body": "x"}))
+
+	// Under OR a non-boolean item is skipped and the remaining boolean items
+	// still decide the result, matching the existing error-tolerance semantics.
+	mOr := &Matcher{Type: MatcherTypeHolder{MatcherType: DSLMatcher}, Condition: "or", DSL: []string{"len(body)", "contains(body, 'x')"}}
+	require.NoError(t, mOr.CompileMatchers())
+	require.True(t, mOr.MatchDSL(map[string]interface{}{"body": "x"}))
+}
+
+func TestMatchBinary_MatchAll(t *testing.T) {
+	// OR + match-all must collect every matched pattern, like word and regex
+	// matchers do, instead of returning only the first hit.
+	mOrAll := &Matcher{Type: MatcherTypeHolder{MatcherType: BinaryMatcher}, Condition: "or", MatchAll: true, Binary: []string{"414141", "50494e47"}} // "AAA", "PING"
+	require.NoError(t, mOrAll.CompileMatchers())
+	ok, got := mOrAll.MatchBinary("xxPINGyyAAAzz")
+	require.True(t, ok)
+	require.Equal(t, []string{"AAA", "PING"}, got)
+
+	// AND + match-all returns every matched pattern as well.
+	mAndAll := &Matcher{Type: MatcherTypeHolder{MatcherType: BinaryMatcher}, Condition: "and", MatchAll: true, Binary: []string{"414141", "50494e47"}}
+	require.NoError(t, mAndAll.CompileMatchers())
+	ok, got = mAndAll.MatchBinary("xxPINGyyAAAzz")
+	require.True(t, ok)
+	require.Equal(t, []string{"AAA", "PING"}, got)
+
+	// AND + match-all still fails when any pattern is absent.
+	ok, got = mAndAll.MatchBinary("xxPINGyy")
+	require.False(t, ok)
+	require.Empty(t, got)
+
+	// OR without match-all keeps returning the first match only.
+	mOr := &Matcher{Type: MatcherTypeHolder{MatcherType: BinaryMatcher}, Condition: "or", Binary: []string{"414141", "50494e47"}}
+	require.NoError(t, mOr.CompileMatchers())
+	ok, got = mOr.MatchBinary("xxPINGyyAAAzz")
+	require.True(t, ok)
+	require.Equal(t, []string{"AAA"}, got)
+}
+
+func TestCompileMatchers_InvalidCondition(t *testing.T) {
+	m := &Matcher{Type: MatcherTypeHolder{MatcherType: WordsMatcher}, Condition: "andd", Words: []string{"x"}}
+	require.Error(t, m.CompileMatchers())
+}

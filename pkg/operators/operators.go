@@ -47,7 +47,11 @@ type Operators struct {
 // Compile compiles the operators as well as their corresponding matchers and extractors
 func (operators *Operators) Compile() error {
 	if operators.MatchersCondition != "" {
-		operators.matchersCondition = matchers.ConditionTypes[operators.MatchersCondition]
+		condition, ok := matchers.ConditionTypes[operators.MatchersCondition]
+		if !ok {
+			return fmt.Errorf("unknown matchers-condition specified: %s", operators.MatchersCondition)
+		}
+		operators.matchersCondition = condition
 	} else {
 		operators.matchersCondition = matchers.ORCondition
 	}

@@ -3,6 +3,7 @@ package operators
 import (
 	"testing"
 
+	"github.com/projectdiscovery/nuclei/v3/pkg/operators/matchers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,4 +55,28 @@ func TestMakeDynamicValuesCallback(t *testing.T) {
 		})
 		require.Equal(t, 1, count, "could not get correct result count")
 	})
+}
+
+func TestOperatorsCompile_InvalidMatchersCondition(t *testing.T) {
+	// A misspelled matchers-condition (e.g. "andd") must be rejected at
+	// compile time instead of silently falling back to OR semantics.
+	operators := &Operators{
+		MatchersCondition: "andd",
+		Matchers: []*matchers.Matcher{{
+			Type:  matchers.MatcherTypeHolder{MatcherType: matchers.WordsMatcher},
+			Words: []string{"x"},
+		}},
+	}
+	require.Error(t, operators.Compile())
+
+	for _, valid := range []string{"and", "or", ""} {
+		operators := &Operators{
+			MatchersCondition: valid,
+			Matchers: []*matchers.Matcher{{
+				Type:  matchers.MatcherTypeHolder{MatcherType: matchers.WordsMatcher},
+				Words: []string{"x"},
+			}},
+		}
+		require.NoError(t, operators.Compile())
+	}
 }

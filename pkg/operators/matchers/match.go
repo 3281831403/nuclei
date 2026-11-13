@@ -183,16 +183,19 @@ func (matcher *Matcher) MatchBinary(corpus string) (bool, []string) {
 		}
 
 		// If the condition was an OR, return on the first match.
-		if matcher.condition == ORCondition {
+		if matcher.condition == ORCondition && !matcher.MatchAll {
 			return true, []string{binary}
 		}
 
 		matchedBinary = append(matchedBinary, binary)
 
 		// If we are at the end of the words, return with true
-		if len(matcher.Binary)-1 == i {
+		if len(matcher.Binary)-1 == i && !matcher.MatchAll {
 			return true, matchedBinary
 		}
+	}
+	if len(matchedBinary) > 0 && matcher.MatchAll {
+		return true, matchedBinary
 	}
 	return false, []string{}
 }
@@ -236,6 +239,12 @@ func (matcher *Matcher) MatchDSLWithOptions(data map[string]interface{}, options
 
 		if boolResult, ok := result.(bool); !ok {
 			gologger.Error().Label("WRN").Msgf("[%s] The return value of a DSL statement must return a boolean value.", data["template-id"])
+			// A non-boolean result cannot satisfy the condition. Fail closed
+			// like an evaluation error, so an AND group cannot match on a
+			// partially evaluated expression set.
+			if matcher.condition == ANDCondition {
+				return false
+			}
 			continue
 		} else if !boolResult {
 			// If we are in an AND request and a match failed,
